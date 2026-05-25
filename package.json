@@ -10,7 +10,7 @@
     "format": "prettier . --write"
   },
   "keywords": [],
-  "author": "",
+  "author": "Swarup Das",
   "license": "ISC",
   "dependencies": {
     "config": "^3.3.11",
