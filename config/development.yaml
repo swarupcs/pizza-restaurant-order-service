@@ -1,0 +1,22 @@
+# Order Service - Development Configuration
+# This file is loaded automatically by the 'config' npm package when NODE_ENV=development
+
+server:
+  port: 5503
+
+database:
+  url: "mongodb://localhost:27017/order-service-db"
+
+kafka:
+  broker:
+    - "localhost:9092"
+
+frontend:
+  clientUI: "http://localhost:5173"
+  adminUI: "http://localhost:5174"
+
+auth:
+  jwksUri: "http://localhost:5501/.well-known/jwks.json"
+
+stripe:
+  secretKey: ""

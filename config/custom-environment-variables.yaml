@@ -1,0 +1,29 @@
+# Order Service - Environment Variable Mappings
+# This file maps config keys to environment variable names.
+# The 'config' npm package will automatically override config values
+# with values from the corresponding environment variables at runtime.
+# Reference: https://github.com/node-config/node-config/wiki/Environment-Variables
+
+server:
+  port: "PORT"
+
+database:
+  url: "DB_URL"
+
+kafka:
+  broker:
+    __name: "KAFKA_BROKER"
+    __format: "json"
+  sasl:
+    username: "KAFKA_SASL_USERNAME"
+    password: "KAFKA_SASL_PASSWORD"
+
+frontend:
+  clientUI: "CLIENT_UI_DOMAIN"
+  adminUI: "ADMIN_UI_DOMAIN"
+
+auth:
+  jwksUri: "JWKS_URI"
+
+stripe:
+  secretKey: "STRIPE_SECRET_KEY"

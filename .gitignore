@@ -130,4 +130,5 @@ dist
 .pnp.*
 
 
-config/
+# node-config: only ignore production secrets, commit dev/test configs
+config/production.yaml
