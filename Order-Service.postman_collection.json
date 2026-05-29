@@ -1,0 +1,410 @@
+{
+  "info": {
+    "_postman_id": "c3d4e5f6-a7b8-9012-cdef-123456789012",
+    "name": "Order Service",
+    "description": "Complete API collection for the Order Service.\n\n**Base URL:** `{{baseUrl}}`  (default: `http://localhost:5503`)\n\n**Auth:** All endpoints require an `accessToken` httpOnly cookie (set after login via auth-service).\n\n**Roles:**\n- `admin` – can view all orders across all tenants\n- `manager` – can view and update orders for their own tenant\n- `customer` – can place orders and view their own orders\n\n**Idempotency:** The `POST /orders` endpoint requires an `Idempotency-Key` header to prevent duplicate order creation on retries.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:5503",
+      "type": "string"
+    },
+    {
+      "key": "orderId",
+      "value": "65f1a2b3c4d5e6f7a8b9c0d4",
+      "type": "string",
+      "description": "MongoDB ObjectId of an order"
+    },
+    {
+      "key": "customerId",
+      "value": "65f1a2b3c4d5e6f7a8b9c0d5",
+      "type": "string",
+      "description": "MongoDB ObjectId of a customer document"
+    },
+    {
+      "key": "tenantId",
+      "value": "1",
+      "type": "string",
+      "description": "Tenant (restaurant) ID"
+    }
+  ],
+  "item": [
+    {
+      "name": "Orders",
+      "description": "Order lifecycle management — place, list, view, and update order status.",
+      "item": [
+        {
+          "name": "Create Order",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              {
+                "key": "Idempotency-Key",
+                "value": "unique-uuid-per-request-attempt",
+                "description": "Required. A unique UUID per order attempt to prevent duplicates on retry."
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"cart\": [\n    {\n      \"_id\": \"65f1a2b3c4d5e6f7a8b9c0d2\",\n      \"name\": \"Margherita Pizza\",\n      \"image\": \"https://example.com/image.jpg\",\n      \"qty\": 1,\n      \"chosenConfiguration\": {\n        \"priceConfiguration\": {\n          \"Size\": \"Small\",\n          \"Crust\": \"Thin\"\n        },\n        \"selectedToppings\": [\n          {\n            \"id\": \"65f1a2b3c4d5e6f7a8b9c0d3\",\n            \"name\": \"Extra Cheese\",\n            \"price\": 49\n          }\n        ]\n      }\n    }\n  ],\n  \"customerId\": \"{{customerId}}\",\n  \"tenantId\": \"{{tenantId}}\",\n  \"paymentMode\": \"card\",\n  \"couponCode\": \"\",\n  \"address\": \"123 Main Street, Mumbai\",\n  \"comment\": \"Extra spicy please\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/orders",
+              "host": ["{{baseUrl}}"],
+              "path": ["orders"]
+            },
+            "description": "Place a new order.\n\n**Auth required:** `accessToken` cookie (any authenticated role).\n\n**Headers:** `Idempotency-Key` – a unique UUID per order attempt (prevents duplicates on retry).\n\n**Body fields:**\n- `cart` – array of cart items with `_id`, `name`, `image`, `qty`, and `chosenConfiguration`\n- `customerId` – customer document ID\n- `tenantId` – restaurant ID\n- `paymentMode` – `card` or `cash`\n- `couponCode` – optional discount code\n- `address` – delivery address string\n- `comment` – optional order note\n\n**Pricing logic (server-side):**\n- Total calculated from product/topping prices cached from catalog service\n- 18% GST applied\n- ₹100 delivery charge added\n- Coupon discount deducted if valid\n\n**Returns (card payment):** `{ paymentUrl: string }` — Stripe checkout URL\n\n**Returns (cash payment):** `{ paymentUrl: null }`\n\n**Side effect:** Publishes an `ORDER_CREATE` event to the `order` Kafka topic."
+          },
+          "response": [
+            {
+              "name": "200 OK (Card Payment)",
+              "originalRequest": {
+                "method": "POST",
+                "header": [{ "key": "Idempotency-Key", "value": "abc123-unique-key" }],
+                "url": { "raw": "{{baseUrl}}/orders" }
+              },
+              "status": "OK",
+              "code": 200,
+              "header": [{ "key": "Content-Type", "value": "application/json" }],
+              "body": "{\n  \"paymentUrl\": \"https://checkout.stripe.com/c/pay/cs_test_xxxxxxxxxxxx\"\n}"
+            },
+            {
+              "name": "200 OK (Cash Payment)",
+              "originalRequest": {
+                "method": "POST",
+                "url": { "raw": "{{baseUrl}}/orders" }
+              },
+              "status": "OK",
+              "code": 200,
+              "header": [{ "key": "Content-Type", "value": "application/json" }],
+              "body": "{\n  \"paymentUrl\": null\n}"
+            }
+          ]
+        },
+        {
+          "name": "Get All Orders (Admin/Manager)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/orders?tenantId={{tenantId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["orders"],
+              "query": [
+                { "key": "tenantId", "value": "{{tenantId}}", "description": "Filter by tenant (admin only). Managers automatically see only their tenant's orders." }
+              ]
+            },
+            "description": "Retrieve all orders.\n\n**Auth required:** `accessToken` cookie with `admin` or `manager` role. Customers are forbidden.\n\n**Behavior:**\n- `admin` – sees all orders (optionally filtered by `tenantId`)\n- `manager` – sees only their own tenant's orders (filter ignored)\n\n**Returns:** Array of Order objects (sorted by `createdAt` desc, with populated customer data)."
+          },
+          "response": [
+            {
+              "name": "200 OK",
+              "originalRequest": { "method": "GET", "url": { "raw": "{{baseUrl}}/orders" } },
+              "status": "OK",
+              "code": 200,
+              "header": [{ "key": "Content-Type", "value": "application/json" }],
+              "body": "[\n  {\n    \"_id\": \"65f1a2b3c4d5e6f7a8b9c0d4\",\n    \"cart\": [],\n    \"address\": \"123 Main Street, Mumbai\",\n    \"comment\": \"Extra spicy please\",\n    \"customerId\": { \"_id\": \"65f1...\", \"firstName\": \"Swarup\", \"email\": \"swarup@example.com\" },\n    \"tenantId\": \"1\",\n    \"total\": 500,\n    \"discount\": 0,\n    \"taxes\": 72,\n    \"deliveryCharges\": 100,\n    \"paymentMode\": \"card\",\n    \"orderStatus\": \"received\",\n    \"paymentStatus\": \"pending\",\n    \"createdAt\": \"2024-01-01T00:00:00.000Z\"\n  }\n]"
+            },
+            {
+              "name": "403 Forbidden (Customer)",
+              "originalRequest": { "method": "GET", "url": { "raw": "{{baseUrl}}/orders" } },
+              "status": "Forbidden",
+              "code": 403,
+              "header": [{ "key": "Content-Type", "value": "application/json" }],
+              "body": "{\n  \"errors\": [{ \"type\": \"HttpError\", \"message\": \"Not allowed.\" }]\n}"
+            }
+          ]
+        },
+        {
+          "name": "Get My Orders (Customer)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/orders/mine",
+              "host": ["{{baseUrl}}"],
+              "path": ["orders", "mine"]
+            },
+            "description": "Retrieve all orders belonging to the currently authenticated customer.\n\n**Auth required:** `accessToken` cookie.\n\n**Behavior:** Finds the customer document by `userId` from JWT, then returns all their orders (cart field excluded).\n\n**Returns:** Array of Order objects."
+          },
+          "response": [
+            {
+              "name": "200 OK",
+              "originalRequest": { "method": "GET", "url": { "raw": "{{baseUrl}}/orders/mine" } },
+              "status": "OK",
+              "code": 200,
+              "header": [{ "key": "Content-Type", "value": "application/json" }],
+              "body": "[\n  {\n    \"_id\": \"65f1a2b3c4d5e6f7a8b9c0d4\",\n    \"address\": \"123 Main Street, Mumbai\",\n    \"tenantId\": \"1\",\n    \"total\": 500,\n    \"orderStatus\": \"received\",\n    \"paymentStatus\": \"pending\",\n    \"createdAt\": \"2024-01-01T00:00:00.000Z\"\n  }\n]"
+            }
+          ]
+        },
+        {
+          "name": "Get Single Order",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/orders/{{orderId}}?fields=orderStatus,paymentStatus,address",
+              "host": ["{{baseUrl}}"],
+              "path": ["orders", "{{orderId}}"],
+              "query": [
+                { "key": "fields", "value": "orderStatus,paymentStatus,address", "description": "Comma-separated list of fields to project (optional). Always includes customerId." }
+              ]
+            },
+            "description": "Retrieve a single order by ID.\n\n**Auth required:** `accessToken` cookie.\n\n**Access control:**\n- `admin` – can view any order\n- `manager` – can only view orders from their own restaurant\n- `customer` – can only view their own orders\n\n**Query param:** `fields` – comma-separated list of fields to include in the response projection.\n\n**Returns:** Order object (with populated customer data)."
+          },
+          "response": [
+            {
+              "name": "200 OK",
+              "originalRequest": { "method": "GET", "url": { "raw": "{{baseUrl}}/orders/{{orderId}}?fields=orderStatus,paymentStatus" } },
+              "status": "OK",
+              "code": 200,
+              "header": [{ "key": "Content-Type", "value": "application/json" }],
+              "body": "{\n  \"_id\": \"65f1a2b3c4d5e6f7a8b9c0d4\",\n  \"orderStatus\": \"received\",\n  \"paymentStatus\": \"pending\",\n  \"customerId\": { \"_id\": \"65f1...\", \"firstName\": \"Swarup\" }\n}"
+            },
+            {
+              "name": "400 Order Not Found",
+              "originalRequest": { "method": "GET", "url": { "raw": "{{baseUrl}}/orders/invalid-id" } },
+              "status": "Bad Request",
+              "code": 400,
+              "header": [{ "key": "Content-Type", "value": "application/json" }],
+              "body": "{\n  \"errors\": [{ \"type\": \"HttpError\", \"message\": \"Order does not exists.\" }]\n}"
+            }
+          ]
+        },
+        {
+          "name": "Change Order Status",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"status\": \"preparing\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/orders/change-status/{{orderId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["orders", "change-status", "{{orderId}}"]
+            },
+            "description": "Update the status of an order.\n\n**Auth required:** `accessToken` cookie with `admin` or `manager` role.\n\n**Behavior:** Managers can only update orders from their own restaurant.\n\n**Valid status values:** `received`, `confirmed`, `preparing`, `out_for_delivery`, `delivered`\n\n**Returns:** `{ _id: string }`\n\n**Side effect:** Publishes an `ORDER_STATUS_UPDATE` event to the `order` Kafka topic."
+          },
+          "response": [
+            {
+              "name": "200 OK",
+              "originalRequest": {
+                "method": "PATCH",
+                "body": { "mode": "raw", "raw": "{ \"status\": \"preparing\" }" },
+                "url": { "raw": "{{baseUrl}}/orders/change-status/{{orderId}}" }
+              },
+              "status": "OK",
+              "code": 200,
+              "header": [{ "key": "Content-Type", "value": "application/json" }],
+              "body": "{\n  \"_id\": \"65f1a2b3c4d5e6f7a8b9c0d4\"\n}"
+            },
+            {
+              "name": "403 Forbidden (Wrong Restaurant)",
+              "originalRequest": { "method": "PATCH", "url": { "raw": "{{baseUrl}}/orders/change-status/{{orderId}}" } },
+              "status": "Forbidden",
+              "code": 403,
+              "header": [{ "key": "Content-Type", "value": "application/json" }],
+              "body": "{\n  \"errors\": [{ \"type\": \"HttpError\", \"message\": \"Not allowed.\" }]\n}"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Coupons",
+      "description": "Discount coupon management.",
+      "item": [
+        {
+          "name": "Create Coupon",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"title\": \"New Year Offer\",\n  \"code\": \"NEWYEAR2025\",\n  \"discount\": 20,\n  \"validUpto\": \"2025-12-31T23:59:59.000Z\",\n  \"tenantId\": \"{{tenantId}}\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/coupons",
+              "host": ["{{baseUrl}}"],
+              "path": ["coupons"]
+            },
+            "description": "Create a new discount coupon.\n\n**Auth required:** `accessToken` cookie.\n\n**Body fields:**\n- `title` – display name for the coupon\n- `code` – unique coupon code string\n- `discount` – percentage discount (e.g., `20` = 20%)\n- `validUpto` – ISO 8601 expiry date\n- `tenantId` – restaurant this coupon belongs to\n\n**Returns:** Created coupon document."
+          },
+          "response": [
+            {
+              "name": "200 OK",
+              "originalRequest": { "method": "POST", "url": { "raw": "{{baseUrl}}/coupons" } },
+              "status": "OK",
+              "code": 200,
+              "header": [{ "key": "Content-Type", "value": "application/json" }],
+              "body": "{\n  \"_id\": \"65f1a2b3c4d5e6f7a8b9c0d6\",\n  \"title\": \"New Year Offer\",\n  \"code\": \"NEWYEAR2025\",\n  \"discount\": 20,\n  \"validUpto\": \"2025-12-31T23:59:59.000Z\",\n  \"tenantId\": \"1\",\n  \"createdAt\": \"2024-01-01T00:00:00.000Z\"\n}"
+            }
+          ]
+        },
+        {
+          "name": "Verify Coupon",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"code\": \"NEWYEAR2025\",\n  \"tenantId\": \"{{tenantId}}\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/coupons/verify",
+              "host": ["{{baseUrl}}"],
+              "path": ["coupons", "verify"]
+            },
+            "description": "Verify whether a coupon code is valid and not expired.\n\n**Auth required:** `accessToken` cookie.\n\n**Returns:**\n- `{ valid: true, discount: number }` – if coupon is valid and not expired\n- `{ valid: false, discount: 0 }` – if coupon is expired\n- 400 error if coupon code does not exist"
+          },
+          "response": [
+            {
+              "name": "200 OK (Valid Coupon)",
+              "originalRequest": { "method": "POST", "url": { "raw": "{{baseUrl}}/coupons/verify" } },
+              "status": "OK",
+              "code": 200,
+              "header": [{ "key": "Content-Type", "value": "application/json" }],
+              "body": "{\n  \"valid\": true,\n  \"discount\": 20\n}"
+            },
+            {
+              "name": "200 OK (Expired Coupon)",
+              "originalRequest": { "method": "POST", "url": { "raw": "{{baseUrl}}/coupons/verify" } },
+              "status": "OK",
+              "code": 200,
+              "header": [{ "key": "Content-Type", "value": "application/json" }],
+              "body": "{\n  \"valid\": false,\n  \"discount\": 0\n}"
+            },
+            {
+              "name": "400 Coupon Not Found",
+              "originalRequest": { "method": "POST", "url": { "raw": "{{baseUrl}}/coupons/verify" } },
+              "status": "Bad Request",
+              "code": 400,
+              "header": [{ "key": "Content-Type", "value": "application/json" }],
+              "body": "{\n  \"errors\": [{ \"type\": \"HttpError\", \"message\": \"Coupon does not exists\" }]\n}"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Customers",
+      "description": "Customer profile and delivery address management.",
+      "item": [
+        {
+          "name": "Get Customer Profile",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/customer",
+              "host": ["{{baseUrl}}"],
+              "path": ["customer"]
+            },
+            "description": "Retrieve the customer profile for the authenticated user. If no profile exists yet, one is automatically created from the JWT claims.\n\n**Auth required:** `accessToken` cookie.\n\n**Returns:** Customer document with `userId`, `firstName`, `lastName`, `email`, and `addresses` array."
+          },
+          "response": [
+            {
+              "name": "200 OK",
+              "originalRequest": { "method": "GET", "url": { "raw": "{{baseUrl}}/customer" } },
+              "status": "OK",
+              "code": 200,
+              "header": [{ "key": "Content-Type", "value": "application/json" }],
+              "body": "{\n  \"_id\": \"65f1a2b3c4d5e6f7a8b9c0d5\",\n  \"userId\": \"42\",\n  \"firstName\": \"Swarup\",\n  \"lastName\": \"Das\",\n  \"email\": \"swarup@example.com\",\n  \"addresses\": [\n    { \"text\": \"123 Main Street, Mumbai\", \"isDefault\": false }\n  ],\n  \"createdAt\": \"2024-01-01T00:00:00.000Z\"\n}"
+            }
+          ]
+        },
+        {
+          "name": "Add Delivery Address",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"address\": \"456 Park Avenue, Delhi 110001\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/customer/addresses/{{customerId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["customer", "addresses", "{{customerId}}"]
+            },
+            "description": "Add a new delivery address to the customer's profile.\n\n**Auth required:** `accessToken` cookie. The customer can only modify their own profile (validated by `userId` from JWT).\n\n**Body fields:**\n- `address` – delivery address string\n\n**Returns:** Updated customer document with the new address appended."
+          },
+          "response": [
+            {
+              "name": "200 OK",
+              "originalRequest": {
+                "method": "PATCH",
+                "body": { "mode": "raw", "raw": "{ \"address\": \"456 Park Avenue, Delhi\" }" },
+                "url": { "raw": "{{baseUrl}}/customer/addresses/{{customerId}}" }
+              },
+              "status": "OK",
+              "code": 200,
+              "header": [{ "key": "Content-Type", "value": "application/json" }],
+              "body": "{\n  \"_id\": \"65f1a2b3c4d5e6f7a8b9c0d5\",\n  \"userId\": \"42\",\n  \"addresses\": [\n    { \"text\": \"123 Main Street, Mumbai\", \"isDefault\": false },\n    { \"text\": \"456 Park Avenue, Delhi\", \"isDefault\": false }\n  ]\n}"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Payments",
+      "description": "Stripe payment webhook handler.\n\n⚠️ This endpoint is called by Stripe, not by your frontend. Use Stripe CLI (`stripe listen --forward-to localhost:5503/payments/webhook`) for local testing.",
+      "item": [
+        {
+          "name": "Stripe Webhook",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              {
+                "key": "stripe-signature",
+                "value": "t=timestamp,v1=signature",
+                "description": "Stripe webhook signature header — set automatically by Stripe"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"type\": \"checkout.session.completed\",\n  \"data\": {\n    \"object\": {\n      \"id\": \"cs_test_xxxxxxxxxxxx\"\n    }\n  }\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/payments/webhook",
+              "host": ["{{baseUrl}}"],
+              "path": ["payments", "webhook"]
+            },
+            "description": "Stripe webhook endpoint to handle payment completion events.\n\n**Caller:** Stripe (not your frontend).\n\n**Supported event:** `checkout.session.completed`\n\n**Behavior:**\n1. Verifies the Stripe session\n2. Updates order `paymentStatus` to `paid` or `failed`\n3. Publishes a `PAYMENT_STATUS_UPDATE` event to the `order` Kafka topic\n\n**Returns:** `{ success: true }`\n\n**Local testing:** Use Stripe CLI — `stripe listen --forward-to localhost:5503/payments/webhook`"
+          },
+          "response": [
+            {
+              "name": "200 OK",
+              "originalRequest": { "method": "POST", "url": { "raw": "{{baseUrl}}/payments/webhook" } },
+              "status": "OK",
+              "code": 200,
+              "header": [{ "key": "Content-Type", "value": "application/json" }],
+              "body": "{\n  \"success\": true\n}"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
