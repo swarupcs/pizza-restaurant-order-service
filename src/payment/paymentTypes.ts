@@ -5,7 +5,7 @@ export interface PaymentOptions {
   tenantId: string;
   idempotenencyKey?: string;
 }
-type GatewayPaymentStatus = "no_payment_required" | "paid" | "unpaid";
+export type GatewayPaymentStatus = "no_payment_required" | "paid" | "unpaid";
 
 interface PaymentSession {
   id: string;

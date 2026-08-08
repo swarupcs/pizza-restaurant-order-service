@@ -66,7 +66,13 @@ export class OrderController {
 
     const finalTotal = priceAfterDiscount + taxes + DELIVERY_CHARGES;
 
-    const idempotencyKey = req.headers["idempotency-key"];
+    // Express types headers as `string | string[] | undefined`. The
+    // idempotency schema keys on a String, so collapse a repeated header to
+    // its first value rather than letting an array reach the query.
+    const rawIdempotencyKey = req.headers["idempotency-key"];
+    const idempotencyKey = Array.isArray(rawIdempotencyKey)
+      ? rawIdempotencyKey[0]
+      : rawIdempotencyKey;
 
     const idempotency = await idempotencyModel.findOne({ key: idempotencyKey });
 
@@ -404,7 +410,13 @@ export class OrderController {
     couponCode: string,
     tenantId: string,
   ) => {
-    const code = await couponModel.findOne({ code: couponCode, tenantId });
+    // tenantId arrives as a string from the request body, but the coupon
+    // schema stores it as a Number. Mongoose was casting this implicitly;
+    // converting here makes the mismatch explicit and keeps the query typed.
+    const code = await couponModel.findOne({
+      code: couponCode,
+      tenantId: Number(tenantId),
+    });
 
     if (!code) {
       return 0;

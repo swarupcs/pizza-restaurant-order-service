@@ -2,10 +2,28 @@ import Stripe from "stripe";
 import config from "config";
 import {
   CustomMetadata,
+  GatewayPaymentStatus,
   PaymentGW,
   PaymentOptions,
   VerifiedSession,
 } from "./paymentTypes";
+
+/**
+ * Stripe's SDK types payment_status as the three documented values plus an
+ * open-ended string, so new API values don't break compilation. We keep the
+ * domain type closed and narrow here, at the gateway boundary, so an
+ * unrecognised status fails loudly instead of flowing into order state.
+ */
+const toGatewayPaymentStatus = (status: string): GatewayPaymentStatus => {
+  if (
+    status === "paid" ||
+    status === "unpaid" ||
+    status === "no_payment_required"
+  ) {
+    return status;
+  }
+  throw new Error(`Unexpected Stripe payment_status: ${status}`);
+};
 
 export class StripeGW implements PaymentGW {
   private stripe: Stripe;
@@ -60,7 +78,7 @@ export class StripeGW implements PaymentGW {
     return {
       id: session.id,
       paymentUrl: session.url,
-      paymentStatus: session.payment_status,
+      paymentStatus: toGatewayPaymentStatus(session.payment_status),
     };
   }
 
@@ -69,7 +87,7 @@ export class StripeGW implements PaymentGW {
 
     const verifiedSession: VerifiedSession = {
       id: session.id,
-      paymentStatus: session.payment_status,
+      paymentStatus: toGatewayPaymentStatus(session.payment_status),
       metadata: session.metadata as unknown as CustomMetadata,
     };
 
