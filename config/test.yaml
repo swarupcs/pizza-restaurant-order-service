@@ -10,6 +10,14 @@ database:
 kafka:
   broker:
     - "localhost:9092"
+  # Only read on the production branch of src/config/kafka.ts, but node-config
+  # throws on get() of an undefined key — so these have to exist for
+  # tests/common/kafka.spec.ts to exercise that branch at all. Same reason
+  # config/production.yaml declares them.
+  ssl: true
+  sasl:
+    username: "test-user"
+    password: "test-password"
 
 frontend:
   clientUI: "http://localhost:5173"
